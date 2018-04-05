@@ -537,8 +537,8 @@ class PopenThread(threading.Thread):
         self.old_int_handler = self.old_winch_handler = None
         self.old_tstp_handler = self.old_quit_handler = None
         if on_main_thread():
-            self.old_int_handler = signal.signal(signal.SIGINT,
-                                                 self._signal_int)
+            #self.old_int_handler = signal.signal(signal.SIGINT,
+            #                                     self._signal_int)
             if ON_POSIX:
                 self.old_tstp_handler = signal.signal(signal.SIGTSTP,
                                                       self._signal_tstp)
@@ -560,6 +560,9 @@ class PopenThread(threading.Thread):
         except Exception:
             self._clean_up()
             raise
+        if on_main_thread() or True:
+            self.old_int_handler = signal.signal(signal.SIGINT,
+                                                 self._signal_int)
 
         self.pid = proc.pid
         self.universal_newlines = uninew = proc.universal_newlines
@@ -758,7 +761,17 @@ class PopenThread(threading.Thread):
 
     def _signal_int(self, signum, frame):
         """Signal handler for SIGINT - Ctrl+C may have been pressed."""
+        f = open('log.txt', 'w')
+        f.write('x\n')
+        f.close()
         self.send_signal(signum)
+        handles = (self.stdin, self.stdout, self.stderr,
+                   #self.proc.p2cread, self.proc.p2cwrite,
+                   #self.proc.c2pread, self.proc.c2pwrite,
+                   #self.proc.errread, self.proc.errwrite
+                   )
+        #for handle in handles:
+        #    safe_fdclose(handle)
         if self.proc is not None and self.proc.poll() is not None:
             self._restore_sigint(frame=frame)
         if on_main_thread():
@@ -1934,6 +1947,9 @@ class CommandPipeline:
         for line in self.iterraw():
             # write to stdout line ASAP, if needed
             if stream:
+                line += b'True' if signal.getsignal(signal.SIGINT) is self.proc._signal_int else b'False'
+                line += str(id(signal.getsignal(signal.SIGINT))).encode() + b'\n'
+                line += str(id(self.proc._signal_int)).encode() + b'\n'
                 if stdout_has_buffer:
                     sys.stdout.buffer.write(line)
                 else:
@@ -1949,6 +1965,7 @@ class CommandPipeline:
             # tee it up!
             lines.append(line)
             yield line
+            self.proc._signal_int(signal.SIGINT, None)
 
     def stream_stderr(self, lines):
         """Streams lines to sys.stderr and the errors attribute."""
